@@ -1,0 +1,681 @@
+<!DOCTYPE HTML>
+
+<html>
+	<head>
+		<title>Spotify</title>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+		<link rel="stylesheet" href="assets/css/main.css" />
+		<noscript><link rel="stylesheet" href="assets/css/noscript.css" /></noscript>
+	</head>
+	<body class="is-preload">
+
+		<!-- Page Wrapper -->
+			<div id="page-wrapper">
+
+				<!-- Header -->
+					<header id="header" class="alt">
+						<h1><a href="index.html">Ian McEvoy</a></h1>
+						<!-- <nav> -->
+							<!-- <a href="#menu">Menu</a> -->
+						<!-- </nav> -->
+					</header>
+
+				<!-- Menu -->
+					<!-- <nav id="menu"> -->
+						<!-- <div class="inner"> -->
+							<!-- <h2>Menu</h2> -->
+							<!-- <ul class="links"> -->
+								<!-- <li><a href="index.html">Home</a></li> -->
+								<!-- <li><a href="generic.html">Generic</a></li> -->
+								<!-- <li><a href="elements.html">Elements</a></li> -->
+								<!-- <li><a href="#">Log In</a></li> -->
+								<!-- <li><a href="#">Sign Up</a></li> -->
+							<!-- </ul> -->
+							<!-- <a href="#" class="close">Close</a> -->
+						<!-- </div> -->
+					<!-- </nav> -->
+
+				<!-- Wrapper -->
+					<section id="wrapper">
+						<header>
+							<div class="inner">
+								<h2>Spotify</h2>
+								<p>How accurately can we predict a songs popularity based on its audio features?</p>
+							</div>
+						</header>
+
+						<!-- Content -->
+							<div class="wrapper">
+								<div class="inner">
+
+									<section>
+										<h2 class="major">Introduction</h2>
+										<p>Given the variety present in today’s charts it can be difficult to recognise what it is
+										exactly that makes certain songs so successful – is it the liveliness of a track, maybe the 
+										energy that it brings to a room or perhaps the positivity within its lyrics? Up until recent years 
+										we had no way of calculating this but given the digitalization of music over the past number of years 
+										we now have audio metrics that we can use to shed some light on these questions.</br></br>										
+										The aim of this project is to see how accurately we can predict a tracks popularity based on its various <i>audio features</i> by using 
+										a wide variety of complex machine learning models. I will also examine trends in popular music and identify how 
+										this has changed over the previous three decades.
+										<!-- Each model will be applied to each target dataset before  -->
+										<!-- being evaluated based off the three evaluation metrics. Each model will then be compared against the other  -->
+										<!-- six machine learning models based on how well they performed on the same dataset to conclude which model  -->
+										<!-- is the best for that given dataset. -->
+										<h2 class="major">Data Acquisition & Preprocessing</h2>
+										<p>In order to obtain the necessary data Spotify's API was utilized. This allowed me to pull data on 60,000 songs spanning
+										across three decades. Two separate API calls were required for each year. The first
+										call pulled song data such as <i>name</i>, <i>unique id</i>, and <i>artist name</i>. The second call used the unique id
+										to pull the audio feature data for each song such as <i>energy, tempo, key, </i>etc. Once complete, the two 
+										datasets were joined on the <i>id</i> feature. A conscious decision was made to perform the merge using an 
+										inner join. In doing so, a small number of tracks that did not contain audio features data were dropped from
+										the dataset as they would not be useful.</p>
+										<p>The below function was used to perform the process described above once the initial API connection had been
+										successfully authorized.</p>
+										
+<pre><code>
+def trackGen(decade,fileName):
+    
+    artist_name = []
+    track_name = []
+    popularity = []
+    track_id = []
+    batchsize = 100
+    rows = []
+    
+    # get track features
+    for year in decade:  
+        for i in range(0,2000,50):	
+            track_results = sp.search(q=year, type='track', limit=50,offset=i)
+            for i, t in enumerate(track_results['tracks']['items']):
+                artist_name.append(t['artists'][0]['name'])
+                track_name.append(t['name'])
+                track_id.append(t['id'])
+                popularity.append(t['popularity'])
+
+    df_tracks = pd.DataFrame({'artist_name':artist_name,
+                              'track_name':track_name,
+                              'track_id':track_id,
+                              'popularity':popularity})
+
+    # get audio features
+    for i in range(0,len(df_tracks['track_id']),batchsize):
+        batch = df_tracks['track_id'][i:i+batchsize]
+        feature_results = sp.audio_features(batch)
+        for i, t in enumerate(feature_results):
+                rows.append(t)
+        rows = list(filter(None, rows))      # remove null values 
+        
+    # create df of audio features
+    df_audio_features = pd.DataFrame.from_dict(rows,orient='columns')
+    df_audio_features.rename(columns={'id': 'track_id'}, inplace=True) # rename id col to use for merging 
+    
+    # merge dataframes on track_id
+    df = pd.merge(df_tracks,df_audio_features,on='track_id',how='inner') # inner merge removes tracks with no audio features
+    print("Shape of the dataset:", df_audio_features.shape)
+    
+    df.to_csv(fileName)
+										</code></pre>
+										
+										<p>The below table shows the structure of the data once merged: </p>
+										<div class="table-wrapper">
+											<table>
+												<thead>
+													<tr>
+														<th>Feature</th>
+														<th>Description</th>
+													</tr>
+												</thead>
+												<tbody>
+													<tr>
+														<td>artists</td>
+														<td>Name of the main artist associated with the track.</td>
+													</tr>
+													<tr>
+														<td>name</td>
+														<td>Name of the track.</td>
+													</tr>
+													<tr>
+														<td>id</td>
+														<td> A unique identifier provided by Spotify that is given to each unique track. 
+														This attribute is used to merge the track features results with audio features.</td>
+													</tr>
+													<tr>
+														<td>popularity</td>
+														<td>A value from 0-100 which give us a measure of how popular the track is/was with 
+														100 being the most popular. It is mainly calculated by the number of plays the song has but also 
+														considers how recent those plays are to eliminate bias towards more recent tracks. This field 
+														will be used as our dependent variable.</td>
+													</tr>
+													<tr>
+														<td>danceability</td>
+														<td>Value between 0-1 which indicates how suitable a song is for dancing to. A value of 0 
+														being the least danceable and 1 being the most danceable.</td>
+													</tr>
+													<tr>
+														<td>energy</td>
+														<td>Value between 0-1 which is a measure of a song’s intensity and activity. A value of 0 being 
+														the least energetic and 1 being the most energetic.</td>
+													</tr>
+													<tr>
+														<td>key</td>
+														<td>The key the track is with integers being mapped to pitch class notation. 0 = C, 1 = C#, 2 = D 
+														and so on.</td>
+													</tr>
+													<tr>
+														<td>loudness</td>
+														<td>An average measure of the track’s loudness in decibels.</td>
+													</tr>
+													<tr>
+														<td>mode</td>
+														<td>Value of either 0 or 1 which indicates the modality of the song. 0 being minor and 1 being major.</td>
+													</tr>
+													<tr>
+														<td>speechiness</td>
+														<td>Value between 0-1 which represents the presence of spoken words in a song. Recordings such as podcasts 
+														and audio books will have a value closer to 1 whereas a recording of both music and spoken words such as rap 
+														music will typically be between 0.33-0.66.</td>
+													</tr>
+													<tr>
+														<td>acousticness</td>
+														<td>Value between 0-1 which indicates the acousticness of a track. A value of 1 represents a highly acoustic track.</td>
+													</tr>
+													<tr>
+														<td>instrumentalness</td>
+														<td>Value between 0-1 which indicates the presence of vocals in the track. A track with a value closer to 1 will contain 
+														little or no vocals whereas a track with a value of 0 will contain vocals.</td>
+													</tr>	
+													<tr>
+														<td>liveness</td>
+														<td>Value between 0-1 which indicates if the track was recorded in front of a live audience. Tracks with a value closer 
+														to 1 are more likely to have been recorded in front of a live audience.</td>
+													</tr>
+													<tr>
+														<td>valence</td>
+														<td>Value between 0-1 which indicates the positiveness of the track. A value of 1 indicates a positive track whereas a 
+														value closer to 0 indicates a more negative sounding song.</td>
+													</tr>
+													<tr>
+														<td>tempo</td>
+														<td>The tempo of the song estimated in beats per minutes (BPM).</td>
+													</tr>
+													<tr>
+														<td>type</td>
+														<td>The object type; <i>audio features</i>.</td>
+													</tr>
+													<tr>
+														<td>uri</td>
+														<td>The Spotify URI for the track.</td>
+													</tr>
+													<tr>
+														<td>track_href</td>
+														<td>Contains a URL to the API endpoint which contains the track features</td>
+													</tr>
+													<tr>
+														<td>analysis_url</td>
+														<td>Contains a URL to access full audio analysis of the song.</td>
+													</tr>
+													<tr>
+														<td>duration_ms</td>
+														<td>Value which represents the duration of the track in milliseconds (ms)</td>
+													</tr>
+													<tr>
+														<td>time_signature</td>
+														<td>Value which represents the time signature of the track.</td>
+													</tr>												
+												</tbody>
+												<tfoot>
+													<tr>
+														<td colspan="2"></td>
+													</tr>
+												</tfoot>
+											</table>
+										</div>	
+
+
+									<p>At this point I noticed that despite pulling data on what we initially believed 
+									was 60,000 tracks, both datasets noughtiesTracks and tensTracks contained more than 20,000 
+									tracks while ninetiesTracks contained exactly 20,000, as expected. tensTracks contained 21,040
+									records while noughtiesTracks contained 23,056 records. Upon further examination I found that 
+									many duplicate tracks were being pulled from Spotify during the tracks features API request. This
+									was found by grouping records firstly by the <i>id</i> field and secondly by the <i>artist_name</i> and 
+									<i>track_name</i> simultaneously. All duplicate records were then dropped using Pandas <i>drop_duplicates</i>
+									function
+									</p>
+									
+									<pre><code>
+# drop duplicates of records with same track_id
+tracks.drop_duplicates(subset=['track_id'], inplace=True)
+
+# drop duplicates of records with same artist and track name
+tracks.drop_duplicates(subset=['artist_name','track_name'], inplace=True)
+									</pre></code>
+									
+									<p>Next, I dropped any columns which would not provide any predictive capability to the machine learning 
+									models. The following columns were removed; <i>uri, track_href</i>, and <i>analysis_url.</i>
+									<pre><code>
+tracks.drop(['type','uri','track_href','analysis_url','time_signature'], 1, inplace=True)
+									</pre></code>
+									</p>
+									<p>The final step of data preprocessing required the <i>key</i> feature to be transformed as it was categorical
+									data that would not be understood by the machine learning algorithms. This feature was transformed using one-hot 
+									encoding as I felt this was the optimal way to handle a categorical feature containing twelve levels. Again, this was
+									easily done using Pandas <i>get_dummies</i> function. 
+									<pre><code>
+tracks = pd.get_dummies(tracks, columns=["key"])
+									</pre></code>
+									</p>
+									
+									</section>
+									
+									<p> Lastly, in order to determine the change in trends of popular music over time the dataset was sliced into three separate datasets
+									according to the tracks release date. This also allowed me to test the machine learning models across three large datasets
+									and gain a better understanding of which one performs best. The three datasets were titled:
+												<ol>
+													<li><i>tensTracks</i> - Tracks released between 2010-2019</li>
+													<li><i>noughtiesTracks</i> - Tracks released between 2000-2009</li>
+													<li><i>ninetiesTracks</i> - Tracks released between 1990-1999</li>
+												</ol>
+									</p>	
+									
+									<h2 class="major">Machine Learning Implementation</h2>
+									<p>Now that the data has been acquired and preprocessed we will look at how the machine learning models were
+									fitted to the datasets. As I was curious to test many different models, I opted to implement and evaluate 
+									the performance of the following seven machine learning techniques on the datasets;
+									
+												<ul>
+													<li>Partial Least Squares (PLS) Regression</li>
+													<li>Support Vector Regression (SVR)</li>
+													<li>Ridge Regression.</li>
+													<li>Lasso Regression</li>
+													<li>Random Forest Regression</li>
+													<li>k-Nearest Neighbours (kNN) Regression</li>
+													<li>Artificial Neural Network (ANN)</li>
+												</ul>
+												
+									
+									
+									</p>
+									<p>
+									To ensure consistency, all models with the exception of ANN model were fitted following
+									the same steps. Firstly, the datasets were split into training and testing datasets using a
+									70/30 split.</br>
+									<pre><code>
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=101) 
+									</pre></code>
+									Following this, GridSearch cross-validation was	used to determine the optimal values for a number of 
+									hyperparameters across each of the models as per the resulting 𝑅&sup2; value. Given this method can be 
+									computationally intensive GridSearch was only run on the
+									hyperparameters which were deemed to be of most importance to the model and its performance. Once the
+									optimal hyperparameters were calculated, the model was then fitted to the dataset using the given hyperparameters.
+									Below is an example snippet of GridSearch cross-validation being performed across two example hyperparameters - 
+									<i>n_estimators</i> and <i>bootstrap</i>.</br></br>
+									<pre><code>
+grid_param = {
+    'n_estimators': [100, 300, 500], #'example hyperparameter': [possibility 1, possibility 2, etc]
+    'bootstrap': [True, False]
+}
+
+gd_sr = GridSearchCV(estimator=regressor,
+                     param_grid=grid_param,
+                     scoring='r2', #use r2 as the evaluation metric
+                     cv=5,
+                     n_jobs=-1)
+
+gd_sr.fit(X_train, y_train) #fit the model to testing data
+
+optimum_parameters = gd_sr.best_params_ 
+</pre></code>
+					<section>
+									</p>
+									<p>The below table shows the hyperparameters that were evaluated for each machine learning technique. 
+									</p>
+									
+									<div class="table-wrapper">
+											<table>
+												<thead>
+													<tr>
+														<th>Model</th>
+														<th>Hyperparameters</th>
+													</tr>
+												</thead>
+												<tbody>
+													<tr>
+														<td>PLS Regression</td>
+														<td>n_components and scale.</td>
+													</tr>
+													<tr>
+														<td>SVR</td>
+														<td>C, gamma and epsilon</td>
+													</tr>
+													<tr>
+														<td>Ridge Regression</td>
+														<td>alpha and fit_intercept</td>
+													</tr>
+													<tr>
+														<td>Lasso Regression</td>
+														<td>C, gamma and epsilon</td>
+													</tr>
+													<tr>
+														<td>Random Forest Regression</td>
+														<td>n_estimators and bootstrap</td>
+													</tr>
+													<tr>
+														<td>kNN Regression</td>
+														<td>n_neighbors, weights and algorithm</td>
+													</tr>
+													<tr>
+														<td>ANN</td>
+														<td>epochs</td>
+													</tr>										
+												</tbody>
+												<tfoot>
+													<tr>
+														<td colspan="2"></td>
+													</tr>
+												</tfoot>
+											</table>
+										</div>
+									<section>	
+									<h2 class="major">Results & Evaluation</h2>	
+									<p>The models performance is measured using three evaluation metrics - 𝑅&sup2;, mean absolute error (MAE),
+									and root mean squared error (RMSE). Each model will then be compared against the other six machine 
+									learning models based on how well they performed on the same dataset to conclude which model is the
+									best for that given dataset. Following that, I will examine each datasets correlation to the 
+									<i>popularity</i> feature in order to determine which musical features hold the strongest relationship,
+									and how has this changed since the nineties. 
+									<h5>tensTracks</h5>
+									<p>First we will examine the performance of the machine learning models, and <i>popularity</i>
+									correlation on the tensTracks dataset. The below table shows each models performance on this dataset.
+									</p>
+									<div class="table-wrapper">
+											<table>
+												<thead>
+													<tr>
+														<th><b>Model</b></th>
+														<th><b>𝑅&sup2;</b></th>
+														<th><b>MAE</b></th>
+														<th><b>RMSE</b></th>
+													</tr>
+												</thead>
+												<tbody>
+													<tr>
+														<td><b>PLS Regression</b></td>
+														<td>0.29195</td>
+														<td>21.13058</td>
+														<td>24.97810</td>
+													</tr>
+													<tr>
+														<td><b>SVR</b></td>
+														<td>0.41661</td>
+														<td>16.05198</td>
+														<td>22.6745</td>
+													</tr>
+													<tr>
+														<td><b>Ridge Regression</b></td>
+														<td>0.29316</td>
+														<td>21.01090</td>
+														<td>24.89964</td>
+													</tr>
+													<tr>
+														<td><b>Lasso Regression</b></td>
+														<td>0.29252</td>
+														<td>21.14210</td>
+														<td>24.97044</td>
+													</tr>
+													<tr>
+														<td><b>Random Forest Regression</b></td>
+														<td><b>0.50679</b></td>
+														<td><b>15.73755</b></td>
+														<td><b>20.8472</b></td>
+													</tr>
+													<tr>
+														<td><b>kNN Regression</b></td>
+														<td>0.39588</td>
+														<td>17.75420</td>
+														<td>23.07481</td>
+													</tr>
+													<tr>
+														<td><b>ANN</b></td>
+														<td>0.43154</td>
+														<td>16.04765</td>
+														<td>22.32960</td>
+													</tr>										
+												</tbody>
+												<tfoot>
+													<tr>
+														<td colspan="4"></td>
+													</tr>
+												</tfoot>
+											</table>
+										</div>
+									<p>Random Forest performed the best across all three evaluation metrics on this dataset.
+									Notably, ANN also came second across all three metrics.	This was then closely followed by SVR before
+									the results of the other three models all drop off. Undoubtedly, Random Forest was the most suitable
+									model for this particular dataset. Next we will examine this datasets correlation between the target variable
+									<i>popularity</i> and the predictor variables.
+									</p>
+									<p>
+									<div class="col-4"><span class="image left"><img src="images/tensTracksCorr.png" alt="" /></span></div>
+									It is clear the strongest positively correlated relationship between the audio features and <i>popularity</i> 
+									exists with the two variables <i>danceability</i> and <i>loudness</i>. This tell us that the louder and more “danceable”
+									a song is perceived, the more likely it is to receive a higher popularity value. The audio feature, 
+									<i>instrumentalness</i> appears to be strongly negatively correlated which implies that in the decade that
+									ran from 2010-2019, songs with less vocals tended to be more popular. None of the other independent variables
+									have a correlation strong enough to be of note, particularly all the encoded <i>key</i> variables.
+									</p></br></br></br>
+									<h5>noughtiesTracks</h5>
+									<p>Next we will examine the performance of the models along with the <i>popularity</i>
+									correlation on the noughtiesTracks dataset. The below table shows each models performance on this dataset.
+									</p>
+									<div class="table-wrapper">
+											<table>
+												<thead>
+													<tr>
+														<th><b>Model</b></th>
+														<th><b>𝑅&sup2;</b></th>
+														<th><b>MAE</b></th>
+														<th><b>RMSE</b></th>
+													</tr>
+												</thead>
+												<tbody>
+													<tr>
+														<td><b>PLS Regression</b></td>
+														<td>0.19388</td>
+														<td>20.07703</td>
+														<td>24.97810</td>
+													</tr>
+													<tr>
+														<td><b>SVR</b></td>
+														<td>0.41661</td>
+														<td><b>16.49909</b></td>
+														<td>22.45134</td>
+													</tr>
+													<tr>
+														<td><b>Ridge Regression</b></td>
+														<td>0.19417</td>
+														<td>20.08627</td>
+														<td>23.21143</td>
+													</tr>
+													<tr>
+														<td><b>Lasso Regression</b></td>
+														<td>0.19422</td>
+														<td>20.0975</td>
+														<td>23.21235</td>
+													</tr>
+													<tr>
+														<td><b>Random Forest Regression</b></td>
+														<td><b>0.34196</b></td>
+														<td>16.98863</td>
+														<td><b>20.97436</b></td>
+													</tr>
+													<tr>
+														<td><b>kNN Regression</b></td>
+														<td>0.25370</td>
+														<td>18.21040</td>
+														<td>22.33666</td>
+													</tr>
+													<tr>
+														<td><b>ANN</b></td>
+														<td>0.29248</td>
+														<td>17.17062</td>
+														<td>21.74867</td>
+													</tr>										
+												</tbody>
+												<tfoot>
+													<tr>
+														<td colspan="4"></td>
+													</tr>
+												</tfoot>
+											</table>
+										</div>
+										
+										<p>In this case the best 𝑅&sup2; value again belonged to Random Forest Regression. Random Forest 
+										also recorded the lowest RMSE of the group at 20.97. This time the lowest MAE was recorded by 
+										SVR at 16.5. ANN performed well again with all three metrics slightly below Random Forest. 
+										kNN was also close, coming up just slightly behind ANN on the three metrics. Lastly, the 
+										three models PLS Regression, Ridge Regression and Lasso Regression all delivered very similar 
+										evaluation metrics which performed the worst of the bunch.
+										</p>
+										<div class="col-4"><span class="image right"><img src="images/noughtiesTracksCorr.png" alt="" /></span></div>
+										<p>Despite SVR scoring the highest on one of the evaluation metrics, Random Forest still 
+										performed the best across this dataset with its superior 𝑅&sup2; and RMSE values when compared
+										against the other models. We can conclude that Random Forest is undoubtedly the most
+										suitable for the noughtiesTracks dataset. Next, we will examine the correlation in this 
+										dataset between <i>popularity</i> and the other variables. 
+										</p>
+										<p>
+										As seen in the graph to the right, <i>instrumentalness</i> is the most strongly negatively 
+										correlated variable with <i>popularity</i>. We can conclude from this that the less vocals in 
+										a track makes it more likely to rank higher on the popularity metric. We can also see a positive
+										correlation with both <i>loudness</i> and a slight one with <i>valence</i>. This tell us that 
+										the louder a track is, and the happier it is perceived to be, the more likely it is to return a 
+										favourable <i>popularity</i> during this decade between 2000-2009.
+										</p>
+										<h5>ninetiesTracks</h5>
+										<p>Finally we will examine the performance of the models along with the <i>popularity</i>
+									correlation on the ninetiesTracks dataset. The below table shows each models performance on this dataset.
+									</p>
+									<div class="table-wrapper">
+											<table>
+												<thead>
+													<tr>
+														<th><b>Model</b></th>
+														<th><b>𝑅&sup2;</b></th>
+														<th><b>MAE</b></th>
+														<th><b>RMSE</b></th>
+													</tr>
+												</thead>
+												<tbody>
+													<tr>
+														<td><b>PLS Regression</b></td>
+														<td>0.02801</td>
+														<td>7.47649</td>
+														<td>9.35706</td>
+													</tr>
+													<tr>
+														<td><b>SVR</b></td>
+														<td>0.01884</td>
+														<td><b>7.33484</b></td>
+														<td>9.40344</td>
+													</tr>
+													<tr>
+														<td><b>Ridge Regression</b></td>
+														<td>0.02894</td>
+														<td>7.47597</td>
+														<td>9.35699</td>
+													</tr>
+													<tr>
+														<td><b>Lasso Regression</b></td>
+														<td>0.02825</td>
+														<td>7.47793</td>
+														<td>9.35764</td>
+													</tr>
+													<tr>
+														<td><b>Random Forest Regression</b></td>
+														<td><b>0.04329</b></td>
+														<td>7.43603</td>
+														<td><b>9.28920</b></td>
+													</tr>
+													<tr>
+														<td><b>kNN Regression</b></td>
+														<td>0.01178</td>
+														<td>7.58345</td>
+														<td>9.43721</td>
+													</tr>
+													<tr>
+														<td><b>ANN</b></td>
+														<td>0.03336</td>
+														<td>7.58089</td>
+														<td>9.56936</td>
+													</tr>										
+												</tbody>
+												<tfoot>
+													<tr>
+														<td colspan="4"></td>
+													</tr>
+												</tfoot>
+											</table>
+										</div>
+										<p>A massive decrease was observed in performance across all seven of the machine learning models
+										based off the 𝑅&sup2; value while both MAE and RMSE have improved significantly. Similar to the
+										second dataset Random Forest returned the best 𝑅&sup2; value and RMSE while SRV returned the best
+										MAE of 7.33. In terms of 𝑅&sup2; , ANN is just behind again with a value of 0.03 compared with
+										Random Forests 0.04. In this case Ridge Regression, Lasso Regression and PLS all performed very
+										similarly and, in this case, outperformed SVR in terms of 𝑅&sup2; value and kNN across all three
+										evaluation metrics.
+										</p>
+										<div class="col-4"><span class="image left"><img src="images/ninetiesTracksCorr.png" alt="" /></span></div>
+										<p>Overall, Random Forest is yet again the best suited given that it scored the highest in two of
+										the metrics and was the second highest for the third metric. Interestingly, ANN fell to the
+										worst RMSE and second worst MAE. It is also noteworthy that the previous worst performing models,
+										Ridge Regression, Lasso Regression and PLS, all outperformed SVR in both their 𝑅&sup2; and RMSE values.
+										</p>
+										<p>Looking at the correlation graph to the right we can see <i>loudness</i> is strongest positively 
+										correlated audio feature while <i>instrumentalness</i> and <i>acousticness</i> are the two strongest 
+										negatively correlated audio features. This tells us that loud music tended to perform better in the nineties
+										while music that was not acoustic or instrumental, also did well. 
+										</p>
+								<h2 class="major">Conclusions</h2>	
+								<p>A clear conclusion can be drawn from this that Random Forest is the best performing machine learning model based
+								on the three target datasets given that it outperformed the other models on 7/9 occasions. While it was the best
+								 performing, it had a wide variety of 𝑅&sup2; results, ranging from 0.51 to 0.04 across the three target datasets. 
+								 To conclude you could say this model can be used to predict song popularity in certain eras. It seemed to work well
+								 in years 2010-2019, not so well in 2000-2009, then poorly in 1990-1999. 
+								</p>
+								<p>Observing our correlation graphs across the three decades we can begin to see some patterns. The correlation of 
+								the variable <i>energy</i> changed from positive to negative over the three decades. This would imply that the level
+								of energy in popular music has decreased over the previous three decades.The <i>instrumentalness</i> variable became
+								more negatively correlated as the decades progressed. This indicates that the amount of vocals in popular 
+								tracks has decreased over the three decades. This may be as a result of electronic music becoming more popular.
+								The variable <i>duration_ms</i> changed from positively correlated to negatively correlated as the decades progressed. 
+								This indicates popular tracks have become shorter as time has gone on.
+								</p>
+								</div>
+							</div>
+
+					</section>
+					
+
+					<!-- Footer -->
+					<section id="footer">
+						<div class="inner">
+							<ul class="copyright">
+								<li>Designed, Built & Maintained by Ian McEvoy</li><li>2023</a></li>
+							</ul>
+						</div>
+					</section>
+
+			</div>
+
+		<!-- Scripts -->
+			<script src="assets/js/jquery.min.js"></script>
+			<script src="assets/js/jquery.scrollex.min.js"></script>
+			<script src="assets/js/browser.min.js"></script>
+			<script src="assets/js/breakpoints.min.js"></script>
+			<script src="assets/js/util.js"></script>
+			<script src="assets/js/main.js"></script>
+
+	</body>
+</html>
