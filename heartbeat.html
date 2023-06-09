@@ -1,0 +1,365 @@
+<!DOCTYPE HTML>
+
+<html>
+	<head>
+		<title>Irregular Heartbeat Identifcation</title>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+		<link rel="stylesheet" href="assets/css/main.css" />
+		<noscript><link rel="stylesheet" href="assets/css/noscript.css" /></noscript>
+	</head>
+	<body class="is-preload">
+
+		<!-- Page Wrapper -->
+			<div id="page-wrapper">
+
+				<!-- Header -->
+					<header id="header" class="alt">
+						<h1><a href="index.html">Ian McEvoy</a></h1>
+					</header>
+
+
+
+				<!-- Wrapper -->
+					<section id="wrapper">
+						<header>
+							<div class="inner">
+								<h2>Irregular Heartbeat Identifcation</h2>
+								<p>Using Deep Learning Techniques to Identify Irregularities within Patient Heartbeat Recordings</p>
+							</div>
+						</header>
+
+						<!-- Content -->
+							<div class="wrapper">
+								<div class="inner">
+
+										<h2 class="major">Introduction</h2>
+										<p>This project aims to undertake a challange of classifying heartbeat sound clips into one of five
+										catagories depending on their condition. Computer Aided Diagnosis using machine learning is being utilzed more
+										and more every day in the medical field. Tradionally, ECG machines are used to diagnose these type of conditions despite
+										their known unreliablity. Given the importance of accuracy in this field it is important to explore more modern techniques
+										to see if they can improve on existing tradional methods.</p>
+										<p>The five heartbeat categories are as follows:
+										<ul>
+											<li><i>Normal</i> – A typical heartbeat that has a non-abnormal rhythm.</li>
+											<li><i>Murmur</i> – A whooshing or rumbling sound can be heart in between heartbeats.</li>
+											<li><i>Extra Heart Sound</i> – An extra beat can be heard of either the first or second beat during a heartbeat, e.g., lub-lub-dub or lub-dub-dub.</li>
+											<li><i>Extrasystole</i> – An extra or skipped heartbeat occurs. In this case, an extra beat is different to the “extra heart sound” class, as it only occurs on occasion rather than with each heartbeat.</li>
+											<li><i>Artifact</i> – Non-heartbeat sounds. These can take the shape of any other sounds apart from heartbeats, e.g., people speaking, dogs barking, music, etc.</li>
+										<ul>
+										</p>
+										<p>Throughout the following sections I will discuss the methodology used to designed and implemented a convoluted neural network (CNN) model to classify 
+										irregular heartbeat sounds. Following that, I will discuss the models performance within the Results & Evaluation section.
+										</p>
+										<h2 class="major">Data Acquisition & Preprocessing</h2>
+											<p>
+											All data has been sourced from an online challange provided by Peter Bentley on his website which can be found
+											<a href="http://www.peterjbentley.com/heartchallenge/"> <b>here</b></a>
+											</p>
+											<p>The dataset consists of a total of 832 WAV audio clips of varying heartbeat types collected both from the public via an iPhone application, 
+											and from patients in a clinical hospital trail. The files are between 1 and 30 seconds in length. A CSV file is also provided as part of the 
+											dataset which maps each audio file to its appropriate class. Given that the purpose of this dataset was to be used as a competition, 247 of
+											the 832 files are unusable as they were meant to be used as testing data for the competition and are unlabelled.
+											</p>
+											<p>The dataset initially comprised of two folders of WAV files, which meant they needed to be combined into one set. This was done by adding the
+											contents of both folders to a pandas dataframe. As all WAV files are required to be the same length when being fed into the deep learning model, 
+											only files that were four seconds in length or longer were kept. Having experimented with the accuracy of the final model using files of different length,
+											it was determined that files of less than four seconds added little predictive power to our model. This ultimately meant files shorter than four
+											seconds were not included in the final dataset. 
+											</p>
+											<p>Rather than utilising the CSV file provided as part of the dataset which maps each file to the appropriate label, each files label was established from its filename. 
+											As all filenames followed the same structure, this was done by splitting the filename on the underscore and taking the string before the split as the label. 
+											An example of a filename is as follows; murmur_201101051104.wav. In doing this, I was able to add the correct label of each file to the dataframe.</p>
+											<p>Any file with the label “Aunlabelledtest” or “Bunlabelledtest” was not appended to the final dataset. These consisted of the 247 files that were intended to be used for the test data for the competition entries.
+											</p>
+											<p>The below snippet shows how this was all handled.</p>
+											<pre><code>
+data = []
+# read in both folders containing WAV files
+for dir in ["../heartbeatData/set_a/**","../heartbeatData/set_b/**"]:
+    for item in glob.iglob(dir):
+        if os.path.exists(item):
+          # split filename on underscore in order to get label
+            tag = os.path.basename(item).split("_")[0]
+            # skip files shorter than 4 seconds
+            if librosa.get_duration(filename=item)>4:
+              # ignore unlabelled files
+                if tag not in ["Aunlabelledtest", "Bunlabelledtest"]:
+                  # append files to dataframe
+                    data.append({
+                        "filename": item,
+                        "label": tag
+                    })
+# create dataframe
+df = pd.DataFrame(data)
+										</pre></code>
+										<p>Next, I split the dataset up into three different sets; training, testing and validation. The training dataset is used in 
+										order to train and build the mode, the validation dataset is used to analyse the performance of the model, while the test dataset
+										is used to run the final test to see how accuracy the model is. Firstly, the dataset was split into training and testing data, 
+										with a 80/20 split with 80% of the data going to the training dataset. Secondly, the training set was split 50/50 to create the
+										validation data. This ultimately left us with a training/testing/validation data split of 80/10/10.
+										</p>
+										<p>Once this was completed I noticed a large imbalance in the training dataset. As can be seen in the below chart, the vast majortiy
+										of records are classed as <i>normal</i>.
+										<div class="col-4"><span class="image left"><img src="images/heartbeatImbalance.png" alt="" /></span></div>
+										To combat this I explored a number of options before coming to a decision. Firstly, oversampling of the four classes that 
+										had insufficient records was attempted. This resulted in a vast overfitting of the model to the training data when compared 
+										to test data. Secondly, I undersampled the <i>normal</i> class. In doing this, I began to notice very inconsistent results 
+										from the model which was likely due to the small training dataset size that resulted from undersamping. Finally, a function 
+										from Sci-kit learn named <i>compute_class_weight</i> was adopted which focuses on adjusting each classes weight rather than 
+										oversampling or undersampling the dataset. This function gives classes with less records a higher weighting and classes with 
+										more records, such as <i>normal</i> in our case, a lower weight. By adjusting the weight, the function adjusts
+										the loss function appropriately and minimize error for classes with less records when compared to classes such as <i>normal</i>.
+										</p>
+										<p>
+										<pre><code>
+weight = class_weight.compute_class_weight('balanced', np.unique(y_train), y_train)
+weight = {i : weight[i] for i in range(5)}
+										</pre></code>
+										</p>
+										<p>In order to convert the audio clips into a format readable by our model, i needed to extract features from them. 
+										This was done by utilizing a feature within the Librosa library which extracts the Mel Frequency Cepstral Coefficient (MFCC)
+										from the WAV files. This technique has been around since 1980 and is still considered state of the art to this day. 
+										By extracting each audio clips MFCC, the model is provided with a set of features which represents the shape of each audio 
+										file’s spectral envelope. Included below is a visual representation of the MFCC features extracted from one of the heartbeat
+										records.
+										<div class="col-4"><span class="image right"><img src="images/mfccExample.png" alt="" /></span></div>
+										</p>
+										A function was created to extract the MFCC features during the initial train, test split of the data. Within this function, 
+										a max duration of 4 seconds was also defined, meaning that only the first four seconds of every file was used. As part of the
+										feature extraction process, a parameter named n_mfcc is also defined so I could set the number of MFCCs to return. I opted
+										to set the number of MFCCs based on research carried out by Gnana Rajesh who found 25 MFCCs to deliver the optimal results
+										when classifying heartbeats.
+										<pre><code>
+def extract_features(path):
+    y, sr = librosa.load(path, duration=4)
+    mfccs = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=25)
+    return mfccs
+										</pre></code>
+										<p>
+										Next, I transformed the datasets labels from categorical to numerical using Ski-kit learns LabelEncoder function. This mapped
+										each of the five heartbeat classes: <i>normal, murmur, extra heart sound, extrasystole</i> and <i>artifact</i> to a numerical 
+										value. From this point, I then used Keras <i>to_categorical</i> function to convert each label to a one-hot coded vector. 
+										This allows the labels to be interpreted by the model in a fashion which reflects the non-ordinal relationships between the 
+										different classes.
+										</p>
+										<p>
+										As CNN models take a 4D array as input, the data needed to be reshaped prior to fitting it to the model. The shape that a 
+										CNN model expects, has the structure of batch_size, height, width and depth. In our case, batch_size represents the number of
+										images being fed into the model, height refers to the height of the image which also corresponds to n_mfcc. Width refers to 
+										the width of the image which is related to the length of the clip. As all clips were 4 seconds long, each image has a width of 173. 
+										Depth refers to the number of colour channels in the image, greyscale images have a depth of 1 whereas RGB images have a depth of 1. 
+										As the training and testing dataframes were originally 3D vectors, I reshaped both to 4D by adding an extra dimension to represent
+										the colour channels. This meant the training set was initially in the shape of (323, 25, 173) but was then reshaped to 
+										(323, 25, 173, 1) to be readable by the CNN model.
+										</p>
+										<h2 class="major">Deep Learning Model Implementation</h2>
+										<p>Many iterations of the model took place during the design. In order to avoid repitition I will only discuss the original and 
+										final iteration of the model, then show the contrasting results of both. The models design was determined on by manually adding and
+										removing layers to discover which returned the highest accuracy. Each layers hyperparameters were tuned by Keras Bayesian Optimizer. 
+										Having also experimented with Keras Random Search Optimizer, I found Bayesian delivered more favorable and consistent results in
+										terms of the models accuracy.
+										</p>
+										<h3 class="major">First Iteration</h3>
+										<p>Iteration 1 is the baseline model which was used as a starting point. It consists of four hidden layers including two 2D convolutional 
+										(Conv2D) layers, a flatten layer and a dense layer. Within both the Conv2D layers and the dense layer, there are multiple hyperparameters
+										that have been optimized through Keras Bayesian Optimizer. The input_shape is defined within the first Conv2D layer.</p>
+										<p>For both Conv2D layers, the hyperparameters filters and kernel_size were optimized using the Bayesian optimizer. 
+										The activation function is set to relu for both layers. Within the flatten layer, there are no hyperparameters to be optimized. 
+										The purpose of this layer is to transform the feature map matrix into one column. This is then fed into the hidden dense layer which
+										is optimized through the hyperparameter units. The activation function of this layer is set to relu.</p>
+										<p>Finally, the models output layer is a dense layer which specifies the output_dim equal to the number of classes the dataset has 
+										and an activation function set to softmax. This iteration was then compiled using an Adam optimizer, with a learning_rate value chosen by
+										the Bayesian optimizer of either 0.001 or 0.0001.
+										<pre><code>
+def iter_1(hp):
+    # create model object
+    model = keras.Sequential([
+    #Conv2D layer    
+    keras.layers.Conv2D( 
+        filters=hp.Int('conv_1_filter', min_value=16, max_value=128, step=8),
+        kernel_size=hp.Choice('conv_1_kernel', values = [3,5]),
+        activation='relu',
+        input_shape=input_shape),
+    #Conv2D layer
+    keras.layers.Conv2D(
+        filters=hp.Int('conv_2_filter', min_value=16, max_value=128, step=8),
+        kernel_size=hp.Choice('conv_2_kernel', values = [3,5]),
+        activation='relu'
+    ),
+    # flatten layer    
+    keras.layers.Flatten(),
+    # dense layer    
+    keras.layers.Dense(
+        units=hp.Int('dense_1_units', min_value=32, max_value=128, step=16),
+        activation='relu'
+    ),
+    # output layer    
+    keras.layers.Dense(5, activation='softmax')
+    ])
+
+    model.compile(optimizer=keras.optimizers.Adam(hp.Choice('learning_rate', values=[0.001, 0.0001])),
+          loss='categorical_crossentropy',
+          metrics=['accuracy'])
+    return model
+										</pre></code>
+										</p>
+										<h3 class="major">Final Iteration</h3>
+										<p>Following many, many iteration and tweaks I arrived at the final model. The differences from the original design include the
+										adaption of a regularization technique known as dropout into the model. The purpose of this technique is to prevent models from
+										overfitting to the training data. The process itself involves randomly dropping out a specified amount of neurons which in turn
+										reduces the interdependent learning within the neurons and ultimately reduce the level of overfitting experienced in the previous
+										iterations.</p>
+										<p>Two dropout layers have been added, both under the existing Conv2D layers from the first iteration. The hyperparameter rate 
+										which determines the amount of neurons to be dropped, has been optimized using the Keras Bayesian Optimizer.
+										</p>
+										<p>A downsampling technique known as max pooling has also been introduced. This technique applies a filter to each feature map or 
+										image. In this case the pool_size was set to 2x2 which means each dimension within the feature map will be halved. This returns
+										a summarized version of the input which ultimately results in a faster model which reduced variance that allows for assumptions
+										to be made about the feature map provided.</p> 
+										<p>Two max pooling layers have been added, both of which are between the two sets of convolutional and dropout layers.
+										</p>
+										<p>A third dense layer has also been introduced which is positioned between the existing hidden dense layer, and output dense layer. 
+										Dense layers are one of the most common in deep learning models and the addition of this layer was found to increase the models 
+										accuracy without causing the model to overfit to the training data. Similar to the layer discussed in the first iteration, 
+										the hyperparameter is optimized using the Bayesian optimizer and the activation function is set to relu.
+										</p>
+										<p>
+										Having determined the optimal model, it was then fit to the validation data with the number of epochs set to 100. Two callbacks 
+										were set up during the training phase to reduce redundant computational time and power. Early stopping was introduced if the 
+										validation accuracy did not improve within the previous 20 epochs. This allowed the training to stop if the models accuracy
+										was not improving as the epochs increased. Secondly, the hyperparameter <i>learning_rate</i> was reduced if the validation 
+										accuracy did not improve in the previous 12 epochs.
+										<pre><code>
+def final_iter(hp):
+    model = keras.Sequential([
+    #Conv2D layer    
+    keras.layers.Conv2D( 
+        filters=hp.Int('conv_1_filter', min_value=32, max_value=128, step=16),
+        kernel_size=hp.Choice('conv_1_kernel', values = [3,5]),
+        activation='relu',
+        input_shape=input_shape),
+
+    # max pooling layer 1
+    keras.layers.MaxPooling2D(pool_size=(2,2)),
+
+    # add dropout layer
+    keras.layers.Dropout(
+        rate=hp.Float('dropout_1_rate', min_value=0.2,max_value=0.5,step=0.05)),
+        
+    #Conv2D layer
+    keras.layers.Conv2D(
+        filters=hp.Int('conv_2_filter', min_value=32, max_value=64, step=16),
+        kernel_size=hp.Choice('conv_2_kernel', values = [3,5]),
+        activation='relu'
+    ),
+    # max pooling layer 2
+    keras.layers.MaxPooling2D(pool_size=(2,2)),
+
+    # dropout layer
+    keras.layers.Dropout(
+        rate=hp.Float('dropout_2_rate', min_value=0.2,max_value=0.5,step=0.05)),
+
+    # flatten layer    
+    keras.layers.Flatten(),
+
+    # dense layer    
+    keras.layers.Dense(
+        units=hp.Int('dense_1_units', min_value=32, max_value=128, step=16),
+        activation='relu'
+    ),
+    # second dense layer
+    keras.layers.Dense(
+        units=hp.Int('dense_2_units', min_value=64, max_value=128, step=16),
+        activation='relu'
+    ),
+    # output layer    
+    keras.layers.Dense(5, activation='softmax')
+    ])
+
+    model.compile(optimizer=keras.optimizers.Adam(hp.Choice('learning_rate', values=[0.001, 0.0001])),
+          loss='categorical_crossentropy',
+          metrics=['accuracy'])
+    return model
+										</pre></code>
+										</p>
+										<h2 class="major">Results & Evaluation</h2>	
+										<p>To evaluate each iteration, I observed the resulting loss and accuracy curve which depicts the level of each metric
+										as the training progresses through the epochs. By analysing both curves I was able to observe when overfitting was 
+										present in the model and act upon it. Examples of how this looks can be seen below. Both graphs below have been taken from
+										the results of the first iteration of the model. 
+										<div class="col-4"><span class="image fit"><img src="images/iter1_acc.png" alt="" /></span></div>
+										<div class="col-4"><span class="image fit"><img src="images/iter1_loss.png" alt="" /></span></div>
+										As seen in the accuracy curve, the model predicts perfectly on the training data whereas the validation data 
+										provides for much lower accuracy. A similar contrast is viewed with the loss curve which shows a non-existing loss
+										for the training data after 15 epochs whereas the validation loss remains near constant at 1 throughout. These graphs
+										are an extreme example of overfitting.
+										</p>
+										<p>
+										The resulting accuracy and loss curves from the final model are included below.
+										<div class="col-4"><span class="image fit"><img src="images/iterfinal_acc.png" alt="" /></span></div>
+										<div class="col-4"><span class="image fit"><img src="images/iterfinal_loss.png" alt="" /></span></div>
+										</p>
+										<p>
+										As seen in the accuracy curve, the amount of overfitting has decreased drastically in comparison to the results 
+										observed in the first iteration. Our loss curve does indicate overfitting may still be occurring. In an attempt
+										to combat this, I tried adding more dropout layers but this resulted in a loss of accuracy. It is clear, techniques
+										applied throughout the iteration such as regularization and downsampling have improved the performance of the model.
+										<div class="col-4"><span class="image left"><img src="images/iterfinal_matrix.png" alt="" /></span></div>
+										After running the optimal model numerous times, the highest accuracy level recorded was 70%. The confusion matrix 
+										of this run can be seen to the left. The model successfully classified the murmur heartbeats correctly each time. 
+										The model was also relatively successful at classifying the non-heartbeat (artifact) audio clips within the dataset, 
+										returning an accuracy score of 88%. The model struggled to predict the extrastole class, as it mistook these for 
+										murmurs with each instance. The category extrahls was correctly categorized 50% of the time.
+										</p>
+										<p>
+										The classification report has been included below. 
+										<div class="col-4"><span class="image right"><img src="images/iterfinal_classreport.png" alt="" /></span></div>
+										The models low accuracy of the class murmur is explained here given that there was only one instance of it in our
+										testing dataset. Artifact was the class the model predicted the best, returning an F1-score of 0.93. This is 
+										unsurprising given that these audio clips were of sounds other than heartbeats. The model was also relatively
+										successful at classifying normal heartbeat sounds, returning an F1 score of 0.72 for this class. F1-score is
+										often seen as the most balanced evaluation metric of a model given that it considers both precision and recall
+										in its calculation.</p>
+										<p>Overall, the model returned results of a precision rate of 0.68, recall rate of 0.59, an F1-score of 0.59 
+										and an accuracy rate of 70%</p>
+										</p>
+										<h2 class="major">Conclusions</h2>	
+										<p>The model returns an accuracy of 70%, and F1-score of 0.72. Based on the research in this domain this level
+										of accuracy would not be considered high. A possible explanation for this, is likely due to the small sample 
+										size that we were working with. Having begun with 832 samples, after preprocessing the dataset, we were left
+										with only 404 records. This number of records is unlikely to be enough to train a reliable deep learning model. 
+										This also accounts for the high level of fluctuation within the models accuracy which is experienced with each model fit.
+										</p>
+										<p>
+										While an accuracy of 70% may be considered acceptable within some domains, in health diagnosis this is not an 
+										acceptable level of accuracy. Inaccurate diagnosis either as false-positives or false-negatives will inevitably
+										cause burden to patients. Given that this model has shown promise, it could be improved to an acceptable level
+										of performance with future work.
+										</p>
+								</div>
+							</div>
+					</section>
+					
+
+					<!-- Footer -->
+					<section id="footer">
+						<div class="inner">
+							<ul class="copyright">
+								<li>Designed, Built & Maintained by Ian McEvoy</li><li>2023</a></li>
+							</ul>
+						</div>
+					</section>
+
+			</div>
+
+		<!-- Scripts -->
+			<script src="assets/js/jquery.min.js"></script>
+			<script src="assets/js/jquery.scrollex.min.js"></script>
+			<script src="assets/js/browser.min.js"></script>
+			<script src="assets/js/breakpoints.min.js"></script>
+			<script src="assets/js/util.js"></script>
+			<script src="assets/js/main.js"></script>
+
+	</body>
+</html>
